@@ -1,0 +1,1 @@
+News AI Agent — A serverless TypeScript application that validates a user topic, retrieves real-time news from GNews and NewsAPI, and generates AI summaries with sentiment and entity extraction using OpenAI. Built with Next.js, AWS Lambda, S3, and Redis.
