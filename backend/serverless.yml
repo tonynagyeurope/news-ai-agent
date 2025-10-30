@@ -35,7 +35,7 @@ provider:
       maxAge: 600
       allowCredentials: false
   environment:
-    SUMM_V: "7"
+    SUMM_V: "8"
     DEBUG: 'true'
     NEWS_BUCKET: ${self:custom.newsBucketName}
     INTERNAL_TOKEN: ${env:INTERNAL_TOKEN, ''}

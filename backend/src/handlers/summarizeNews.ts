@@ -65,7 +65,7 @@ interface SummCachePayload {
   at: string; // ISO
 }
 
-const SUMM_V = process.env.SUMM_V ?? "7"; 
+const SUMM_V = process.env.SUMM_V ?? "8"; 
 const DISABLE_CACHE = process.env.SUMM_DEBUG_NOCACHE === "1";
 
 function env(name: string, fallback?: string): string {
