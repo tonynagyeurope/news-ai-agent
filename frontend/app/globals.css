@@ -1,0 +1,3 @@
+/* app/globals.css */
+@import "tailwindcss";
+/* keep global resets only, no @apply here */

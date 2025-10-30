@@ -1,0 +1,149 @@
+service: news-ai-agent-backend
+frameworkVersion: '4'
+useDotenv: true
+
+custom:
+  newsBucketName: ${self:service}-${sls:stage}-news-${aws:accountId}
+  dotenv:
+    path: ../.env             
+    include:
+      - OPENAI_API_KEY
+      - GNEWS_API_KEY
+      - NEWSAPI_KEY
+      - UPSTASH_REDIS_REST_URL
+      - UPSTASH_REDIS_REST_TOKEN
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: ${env:AWS_REGION, 'us-east-1'}
+  architecture: x86_64
+  memorySize: 512
+  timeout: 15
+  httpApi:
+    cors:
+      allowedOrigins:
+        - http://localhost:3000
+        - https://news.tonynagy.io
+      allowedHeaders:
+        - Content-Type
+        - x-internal-token
+        - x-request-id
+      allowedMethods:
+        - GET
+        - POST
+        - OPTIONS
+      maxAge: 600
+      allowCredentials: false
+  environment:
+    SUMM_V: "7"
+    DEBUG: 'true'
+    NEWS_BUCKET: ${self:custom.newsBucketName}
+    INTERNAL_TOKEN: ${env:INTERNAL_TOKEN, ''}
+
+    # --- AI / OpenAI ---
+    OPENAI_API_KEY: ${env:OPENAI_API_KEY}
+    OPENAI_MODEL_FAST: ${env:OPENAI_MODEL_FAST, 'gpt-5-nano'}
+    OPENAI_MODEL_QUALITY: ${env:OPENAI_MODEL_QUALITY, 'gpt-5-mini'}
+
+    # --- News providers ---
+    NEWS_PROVIDER: ${env:NEWS_PROVIDER, 'gnews'}   # gnews | newsapi | auto
+    GNEWS_API_KEY: ${env:GNEWS_API_KEY, ''}
+    NEWSAPI_KEY: ${env:NEWSAPI_KEY, ''}
+
+    # Upstash Redis REST (set via .env)
+    UPSTASH_REDIS_REST_URL: ${env:UPSTASH_REDIS_REST_URL, ''}
+    UPSTASH_REDIS_REST_TOKEN: ${env:UPSTASH_REDIS_REST_TOKEN, ''}
+
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - s3:PutObject
+      Resource:
+        - arn:aws:s3:::${self:custom.newsBucketName}/*
+
+package:
+  individually: true
+  patterns:
+    - '!**/*.map'
+    - '!**/__tests__/**'
+    - '!**/*.test.*'
+    - '!node_modules/.bin/**'
+
+build:
+  esbuild: true    
+
+functions:
+  search:
+    handler: src/handlers/searchNews.handler
+    events:
+      - httpApi:
+          method: POST
+          path: /api/news/search
+
+  validate:
+    handler: src/handlers/validateTopic.handler
+    events:
+      - httpApi:
+          method: POST
+          path: /api/news/validate
+
+  summarize:
+    handler: src/handlers/summarizeNews.handler
+    timeout: 25
+    memorySize: 512
+    events:
+      - httpApi:
+          method: POST
+          path: /api/news/summarize
+
+resources:
+  Resources:
+    # Create a private S3 bucket for snapshots; name is deterministic per account/region/stage
+    NewsBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:custom.newsBucketName}
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: true
+          BlockPublicPolicy: true
+          IgnorePublicAcls: true
+          RestrictPublicBuckets: true
+        VersioningConfiguration:
+          Status: Enabled
+
+  Outputs:
+    # Base HTTPS endpoint for the HTTP API v2 ($default stage)
+    HttpApiEndpoint:
+      Value:
+        Fn::Sub: 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com'
+      Export:
+        Name:
+          Fn::Sub: '${self:service}-${sls:stage}-HttpApiEndpoint'
+
+    # Convenience: full URLs for each route (useful in CI logs)
+    ValidateUrl:
+      Value:
+        Fn::Sub: 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/api/news/validate'
+      Export:
+        Name:
+          Fn::Sub: '${self:service}-${sls:stage}-ValidateUrl'
+
+    SearchUrl:
+      Value:
+        Fn::Sub: 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/api/news/search'
+      Export:
+        Name:
+          Fn::Sub: '${self:service}-${sls:stage}-SearchUrl'
+
+    SummarizeUrl:
+      Value:
+        Fn::Sub: 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/api/news/summarize'
+      Export:
+        Name:
+          Fn::Sub: '${self:service}-${sls:stage}-SummarizeUrl'
+
+    # S3 bucket name export
+    NewsBucketName:
+      Value:
+        Ref: NewsBucket

@@ -1,3 +1,13 @@
+# Custom settings by Tony Nagy
+node_modules
+.DS_Store
+.env
+*.log
+backend/.serverless
+backend/.webpack
+frontend/.next
+frontend/out
+
 # Logs
 logs
 *.log
