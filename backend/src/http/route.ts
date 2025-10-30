@@ -20,7 +20,7 @@ export async function router(event: { httpMethod: string; headers?: Record<strin
 }
 
 function isAllowed(origin: string): boolean {
-  const allow = (process.env.CORS_ORIGINS ?? "http://localhost:3000,https://news.tonynagy.io")
+  const allow = (process.env.CORS_ORIGINS ?? "https://news.tonynagy.io")
     .split(",")
     .map(s => s.trim());
   return allow.includes(origin);

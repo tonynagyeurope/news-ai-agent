@@ -290,7 +290,7 @@ async function searchNews(
   const qRaw: string = (body.q ?? "").trim();
   const lang: string = normalizeLang(body.lang);
   const maxItems: number = clamp(body.maxItems ?? 10, 1, 25);
-  const origin = process.env.CORS_ORIGINS ?? "http://localhost:3000,https://news.tonynagy.io"
+  const origin = process.env.CORS_ORIGINS ?? "https://news.tonynagy.io"
 
   if (qRaw.length < 2) {
     return {

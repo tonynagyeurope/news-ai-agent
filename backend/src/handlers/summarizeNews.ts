@@ -182,7 +182,7 @@ function makeSummCacheKey(args: {
 
 export async function summarizeImpl(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> {
   const requestOrigin = event.headers?.origin;
-  const allowList = (process.env.CORS_ORIGINS ?? "http://localhost:3000,https://news.tonynagy.io")
+  const allowList = (process.env.CORS_ORIGINS ?? "https://news.tonynagy.io")
     .split(",").map(s => s.trim()).filter(Boolean);
   const origin = requestOrigin && allowList.includes(requestOrigin) ? requestOrigin : (allowList[0] ?? "*");
 
