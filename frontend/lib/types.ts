@@ -1,7 +1,7 @@
 // frontend/lib/types.ts
-import { AllowedAction, NewsItem, SearchNewsResp } from '@shared/types.js'
+import { AllowedAction, NewsItem, SearchNewsResp } from '@shared/types'
 
-export * from '@shared/types.js';
+export * from '@shared/types';
 
 export interface ValidateInterestInput { raw: string; locale?: 'en'|'de'|'hu'|'ar'; }
 export interface ValidateInterestOutput { valid: boolean; topic: string; reason?: string; }

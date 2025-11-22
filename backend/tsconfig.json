@@ -18,5 +18,5 @@
       "@shared/*": ["../shared/*"]
     }    
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "../shared/httpErrors.ts"]
 }

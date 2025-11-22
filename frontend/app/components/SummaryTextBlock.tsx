@@ -2,7 +2,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { formatSummaryToHtml } from "@lib/utils/summaryFormat.js";
+import { formatSummaryToHtml } from "../../lib/utils/summaryFormat";
 
 interface Props {
   text: string;

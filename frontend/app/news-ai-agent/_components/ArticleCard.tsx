@@ -1,6 +1,6 @@
 'use client';
 
-import type { NewsItem } from '../../../lib/api.js';
+import type { NewsItem } from "@shared/types";
 import { JSX } from 'react';
 
 interface Props {

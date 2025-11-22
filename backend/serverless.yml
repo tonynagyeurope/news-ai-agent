@@ -97,6 +97,21 @@ functions:
           path: /api/news/summarize
 
 resources:
+  extensions:
+    HttpApiStage:
+      Properties:
+        AutoDeploy: true
+        DefaultRouteSettings:
+          ThrottlingBurstLimit: 20     # burst
+          ThrottlingRateLimit: 5.0     # stable RPS (demo)
+        RouteSettings:
+          'POST /api/news/search':
+            ThrottlingBurstLimit: 10
+            ThrottlingRateLimit: 3.0
+          'POST /api/news/summarize':
+            ThrottlingBurstLimit: 6
+            ThrottlingRateLimit: 2.0
+
   Resources:
     # Create a private S3 bucket for snapshots; name is deterministic per account/region/stage
     NewsBucket:

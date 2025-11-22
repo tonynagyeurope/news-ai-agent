@@ -1,13 +1,10 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "lib": ["ES2023", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "jsx": "react-jsx",
-    "lib": [
-      "ES2022",
-      "DOM"
-    ],
     "strict": true,
     "noImplicitAny": true,
     "esModuleInterop": true,
@@ -15,8 +12,7 @@
     "skipLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "@shared/*": ["../shared/*"],
-      "@lib/*": ["./lib/*"]
+      "@shared/*": ["./shared_local/*"] 
     },
     "allowJs": true,
     "noEmit": true,
@@ -33,7 +29,11 @@
     "app/**/*.tsx",
     "lib/**/*.ts",
     ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts"
+    ".next/dev/types/**/*.ts",
+    "**/*.ts", 
+    "**/*.tsx", 
+    "shared_ext/**/*.ts",
+    "shared_local/**/*.ts"
   ],
   "exclude": [
     "node_modules"

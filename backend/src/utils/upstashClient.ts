@@ -9,6 +9,15 @@ export class UpstashClient {
     this.token = token;
   }
 
+  async ttl(key: string): Promise<number | null> {
+    // Returns remaining time to live in seconds, or -2 if the key does not exist, -1 if it exists but has no associated expiration time.
+    const out = (await this.call(`TTL/${encodeURIComponent(key)}`)) as { result?: number } | undefined;
+    if (!out || typeof out.result !== "number") return null;
+    // Normalize special values to null so callers can decide:
+    // -2 (no key), -1 (no expiry) → null
+    return out.result >= 0 ? out.result : null;
+  }
+
   // GET <base>/<command>/<arg1>/<arg2>...
   private async call(path: string): Promise<unknown> {
     const res = await fetch(`${this.baseUrl}/${path}`, {

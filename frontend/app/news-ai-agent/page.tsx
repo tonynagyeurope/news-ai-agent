@@ -1,14 +1,15 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { NewsItem, SummaryStyle } from "@shared/types.js";
-import { SummarizeResp } from "@shared/summary.types.js";
-import { searchNews, summarizeNews } from '../../lib/api.js';
-import { ArticleCard } from './_components/ArticleCard.js';
-import type { SummaryBlock } from "@shared/summary.types.js";
-import { formatSummaryToHtml } from "@lib/utils/summaryFormat.js";
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { NewsItem, SummaryStyle } from "@shared/types";
+import { SummarizeResp } from "@shared/summary.types";
+import { searchNews, summarizeNews } from '../../lib/api';
+import { ArticleCard } from './_components/ArticleCard';
+import type { SummaryBlock } from "@shared/summary.types";
+import { formatSummaryToHtml } from "../../lib/utils/summaryFormat";
 import { ClipboardIcon, CheckIcon } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { RateLimitError } from "@shared/httpErrors";
 
 const LANG = 'en';
 
@@ -65,41 +66,8 @@ function useDebug(): boolean {
   return q.get('debug') === '1' || process.env.NEXT_PUBLIC_DEBUG === '1';
 }
 
-// ---- helper: parse stub-style summary into intro + bullets ----
-function parseStubSummary(raw: string): {
-  intro?: string;
-  bullets?: Array<{ idx?: number; title: string; url?: string }>;
-} {
-  const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  if (lines.length === 0) return {};
-  const intro = lines[0]; // e.g., "Stub summary (en) for 8 item(s):"
-  const bullets: Array<{ idx?: number; title: string; url?: string }> = [];
-
-  // Expect pattern: "- [n] Title (http...)"
-  const re = /^-\s*\[(\d+)\]\s*(.+?)\s*\((https?:\/\/[^\s)]+)\)\s*$/i;
-  const reNoIdx = /^-\s*(.+?)\s*\((https?:\/\/[^\s)]+)\)\s*$/i;
-
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i];
-    let m = re.exec(line);
-    if (m) {
-      bullets.push({ idx: Number(m[1]), title: m[2], url: m[3] });
-      continue;
-    }
-    m = reNoIdx.exec(line);
-    if (m) {
-      bullets.push({ title: m[1], url: m[2] });
-      continue;
-    }
-    // fallback: plain line as title
-    if (line.startsWith('- ')) bullets.push({ title: line.slice(2) });
-  }
-  return { intro, bullets: bullets.length ? bullets : undefined };
-}
-
 export default function NewsAiAgentPage() {
   const [q, setQ] = useState('');
-  const [lang, setLang] = useState('en');
   const [maxItems, setMaxItems] = useState(6);
   const [style, setStyle] = useState<SummaryStyle>('balanced');
   const [mode, setMode] = useState<'fast' | 'quality'>('quality');
@@ -115,6 +83,7 @@ export default function NewsAiAgentPage() {
   const [header, setHeader] = useState<string | null>(null);
   const [intro, setIntro] = useState<string | null>(null);
   const [outro, setOutro] = useState<string | null>(null);  
+  const [remaining, setRemaining] = useState<number>(0)
 
   const [tSearch, setTSearch] = useState<number | null>(null);
   const [tSumm, setTSumm] = useState<number | null>(null);
@@ -124,6 +93,9 @@ export default function NewsAiAgentPage() {
   const canRun = useMemo(() => q.trim().length >= 2 && !loading, [q, loading]);
 
   const [copied, setCopied] = useState(false);
+
+  const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
+  const timerRef = useRef<number | null>(null);  
 
   async function handleCopy() {
     const text =
@@ -150,21 +122,77 @@ export default function NewsAiAgentPage() {
     URL.revokeObjectURL(url);
   }
 
+  const cooldownActive = remaining > 0;
+  const canRunNow = canRun && !cooldownActive && !loading;
+  const runLabel = loading
+    ? "Running…"
+    : cooldownActive
+      ? `Cooldown (${formatSeconds(remaining)})`
+      : "Run";
+
+  function formatSeconds(total: number): string {
+    const t = Math.max(0, Math.ceil(total));
+    const m = Math.floor(t / 60);
+    const s = t % 60;
+    return m > 0 ? `${m}:${String(s).padStart(2, "0")}` : `${s}s`;
+  }
+
+  useEffect(() => {
+    // If we don't have a target, ensure remaining=0 and stop timers
+    if (!cooldownUntil) {
+      setRemaining(0);
+      if (timerRef.current) {
+        window.clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      return;
+    }
+
+    const compute = () => {
+      const secs = Math.ceil((cooldownUntil - Date.now()) / 1000);
+      setRemaining(secs > 0 ? secs : 0);
+      // When it hits zero, cleanup and clear visual error
+      if (secs <= 0) {
+        if (timerRef.current) {
+          window.clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
+        setCooldownUntil(null);
+        setRemaining(0);
+        setError(''); // ← eltünteti a piros feliratot
+      }
+    };
+
+    compute(); // immediate
+    timerRef.current = window.setInterval(compute, 1000);
+
+    return () => {
+      if (timerRef.current) {
+        window.clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [cooldownUntil]);
+
   async function handleRun(): Promise<void> {
+    // Block during cooldown
+    if (cooldownActive) return;
+
     setError('');
     setFellBackToFast(false);
     setWasCached(false);
     setTSearch(null);
     setTSumm(null);
+
     const v = validateTopic(q);
     if (!v.ok) {
-      // Light-hearted, but actionable validation feedback
       setError(v.reason ?? "This topic needs a tiny tweak.");
       return;
     }
 
     setLoading(true);
     setSummary('');
+
     try {
       // 1) Search
       const t0 = performance.now();
@@ -178,16 +206,16 @@ export default function NewsAiAgentPage() {
 
       if (!s.items || s.items.length === 0) {
         setError("No relevant articles found for this topic. Try a more specific subject (e.g. 'IT jobs in the US', 'NHL playoffs 2025', 'UAE food imports').");
-        setBlocks([]);         
+        setBlocks([]);
         setSummary("");
         setLoading(false);
         return;
-      }      
+      }
 
-
-      // 2) Summarize timing
+      // 2) Summarize (+ optional fallback)
       const t2 = performance.now();
       let resp: SummarizeResp | null = null;
+
       try {
         resp = await summarizeNews({
           lang: LANG,
@@ -197,6 +225,10 @@ export default function NewsAiAgentPage() {
           maxItems
         });
       } catch (err) {
+        // If we hit rate limit, propagate to outer catch → cooldown UI
+        if (err instanceof RateLimitError) {
+          throw err;
+        }
         // Quality failed? Try fast as an automatic fallback.
         if (mode === 'quality') {
           try {
@@ -210,12 +242,17 @@ export default function NewsAiAgentPage() {
             resp = respFast;
             setFellBackToFast(true);
           } catch (err2) {
+            // If fast also rate limited, propagate
+            if (err2 instanceof RateLimitError) {
+              throw err2;
+            }
             throw err2;
           }
         } else {
           throw err;
         }
       }
+
       const t3 = performance.now();
       setTSumm(Math.round(t3 - t2));
 
@@ -228,13 +265,21 @@ export default function NewsAiAgentPage() {
       setBlocks(resp.blocks ?? []);
       setSummary(resp.summaryText ?? "");
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (/No usable items/i.test(msg)) {
-        setError("The news source returned items without required fields. Please try a different topic or broaden the query.");
-      } else if (/No relevant articles/i.test(msg) || /No items provided/i.test(msg)) {
-        setError("No relevant articles found. Refine your topic and try again.");
+      // --- Cooldown-aware error handling ---
+      if (e instanceof RateLimitError) {
+        setCooldownUntil(Date.now() + e.retryAfterSeconds * 1000);
+        setRemaining(e.retryAfterSeconds);     // ← induló érték, azonnal látszódjon
+        setError(`Rate limited. Please wait ${formatSeconds(e.retryAfterSeconds)} before retrying.`);
+        return;
       } else {
-        setError(msg);
+        const msg = e instanceof Error ? e.message : String(e);
+        if (/No usable items/i.test(msg)) {
+          setError("The news source returned items without required fields. Please try a different topic or broaden the query.");
+        } else if (/No relevant articles/i.test(msg) || /No items provided/i.test(msg)) {
+          setError("No relevant articles found. Refine your topic and try again.");
+        } else {
+          setError(msg);
+        }
       }
     } finally {
       setLoading(false);
@@ -348,15 +393,23 @@ export default function NewsAiAgentPage() {
               </select>
             </div>
 
+
             {/* Run */}
             <div className="mt-4">
               <button
                 onClick={handleRun}
-                disabled={!canRun}
+                disabled={!canRunNow}
+                aria-disabled={!canRunNow}
                 className="w-full h-[42px] rounded-xl bg-black text-white px-4 py-2 disabled:opacity-60"
               >
-                {loading ? 'Running…' : 'Run'}
+                {runLabel}
               </button>
+
+              {cooldownActive && (
+                <p className="mt-2 text-sm text-gray-600" aria-live="polite">
+                  Please wait {formatSeconds(remaining)} before retrying.
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -515,7 +568,7 @@ export default function NewsAiAgentPage() {
       </AnimatePresence>
 
       <footer className="mt-12 py-6 text-center text-xs text-gray-500 border-t">
-        Built with Next.js · AWS Lambda · OpenAI API — by <a className="underline hover:no-underline" href="https://www.tonynagy.io" target="_blank" rel="noreferrer">Tony Nagy</a>
+        Built with Next.js · AWS Lambda · OpenAI API - by <a className="underline hover:no-underline" href="https://www.tonynagy.io" target="_blank" rel="noreferrer">Tony Nagy</a>
       </footer>    
     </div>
   );

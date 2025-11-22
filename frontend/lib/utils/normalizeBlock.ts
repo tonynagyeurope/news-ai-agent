@@ -1,7 +1,7 @@
 // Egységesíts bármilyen bejövő "block"-ot a renderhez.
 // Próbálkozunk gyakori aliasokkal: index/id, link/href, text/headline, factTokens, stb.
 
-import type { SummaryBlock } from "@shared/summary.types.js";
+import type { SummaryBlock } from "@shared/summary.types";
 
 type AnyObj = Record<string, unknown>;
 

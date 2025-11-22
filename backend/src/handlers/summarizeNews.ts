@@ -25,6 +25,8 @@ import { styleAwareFallback } from "src/summarize/styleAwareFallback.js";
 import { buildPromptJson } from "../summarize/buildPromptJson.js";
 import type { SummaryJson } from "@shared/summary.types.js";
 import { normalizeBlocksForCache } from "src/summarize/normalizeBlocks.js";
+import { RateLimiter } from "../utils/rateLimiter.js";
+
 
 interface NewsItem {
   title: string;
@@ -67,6 +69,25 @@ interface SummCachePayload {
 
 const SUMM_V = process.env.SUMM_V ?? "8"; 
 const DISABLE_CACHE = process.env.SUMM_DEBUG_NOCACHE === "1";
+
+
+const upstashUrl = optEnv("UPSTASH_REDIS_REST_URL");
+const upstashToken = optEnv("UPSTASH_REDIS_REST_TOKEN");
+
+const limiter = (upstashUrl && upstashToken)
+  ? new RateLimiter({
+      client: new UpstashClient(upstashUrl, upstashToken),
+      prefix: "rl:summarize",
+      windowSec: 60,
+      max: 2,
+    })
+  : null;
+
+function clientIp(event: APIGatewayProxyEventV2): string {
+  const ip = event.requestContext.http?.sourceIp?.trim();
+  const xff = event.headers?.["x-forwarded-for"]?.split(",")[0]?.trim();
+  return (xff && xff.length > 0) ? xff : (ip ?? "unknown");
+}
 
 function env(name: string, fallback?: string): string {
   const v = process.env[name];
@@ -185,6 +206,34 @@ export async function summarizeImpl(event: APIGatewayProxyEventV2): Promise<APIG
   const allowList = (process.env.CORS_ORIGINS ?? "https://news.tonynagy.io")
     .split(",").map(s => s.trim()).filter(Boolean);
   const origin = requestOrigin && allowList.includes(requestOrigin) ? requestOrigin : (allowList[0] ?? "*");
+
+  // --- App-level rate limit before costly summarize ---
+  if (limiter) {
+    try {
+      const ip = clientIp(event);
+      const res = await limiter.check(ip);
+      if (!res.allowed) {
+        const retryAfter = Math.max(1, res.resetAtUnixSec - Math.floor(Date.now() / 1000));
+        return {
+          statusCode: 429,
+          headers: {
+            "Content-Type": "application/json",
+            "Retry-After": String(retryAfter),
+            "Access-Control-Allow-Origin": process.env.CORS_ORIGINS?.split(",")[0] ?? "*",
+          },
+          body: JSON.stringify({
+            ok: false,
+            error: "Too Many Requests",
+            remaining: res.remaining,
+            resetAtUnixSec: res.resetAtUnixSec,
+          }),
+        };
+      }
+    } catch (e) {
+      // Fail-open: allow request if limiter is temporarily unavailable
+      console.warn("[rate-limit] error:", (e as Error).message);
+    }
+  }
 
   try {
     // Upstash (optional)
